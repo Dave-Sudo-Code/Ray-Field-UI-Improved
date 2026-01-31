@@ -20,6 +20,23 @@ local ConfigurationExtension = ".rfld"
 
 local RayfieldLibrary = {
 	Flags = {},
+	LayoutTokens = {
+		Padding = {
+			Container = 12,
+			Element = 10
+		},
+		CornerRadius = {
+			Container = 10,
+			Element = 6,
+			Button = 6,
+			Input = 6,
+			Slider = 6
+		},
+		Heights = {
+			Element = 45,
+			InputField = 30
+		}
+	},
 	Theme = {
 		Default = {
 			TextColor = Color3.fromRGB(235, 240, 245),
@@ -569,6 +586,60 @@ local function getThemeTransparency(theme, key, fallback)
 	end
 
 	return value
+end
+
+local function getLayoutToken(category, key, fallback)
+	local tokens = RayfieldLibrary.LayoutTokens
+	if not tokens then
+		return fallback
+	end
+
+	local group = tokens[category]
+	if not group then
+		return fallback
+	end
+
+	local value = group[key]
+	if value == nil then
+		return fallback
+	end
+
+	return value
+end
+
+local function applyCornerRadius(instance, radius)
+	if not instance or not radius then
+		return
+	end
+
+	local corner = instance:FindFirstChildWhichIsA("UICorner")
+	if corner then
+		corner.CornerRadius = UDim.new(0, radius)
+	end
+end
+
+local function applyContainerLayout(container)
+	if not container then
+		return
+	end
+
+	local containerPadding = getLayoutToken("Padding", "Container", 12)
+	local elementPadding = getLayoutToken("Padding", "Element", 10)
+
+	local padding = container:FindFirstChildWhichIsA("UIPadding")
+	if padding then
+		padding.PaddingTop = UDim.new(0, containerPadding)
+		padding.PaddingBottom = UDim.new(0, containerPadding)
+		padding.PaddingLeft = UDim.new(0, containerPadding)
+		padding.PaddingRight = UDim.new(0, containerPadding)
+	end
+
+	local listLayout = container:FindFirstChildWhichIsA("UIListLayout")
+	if listLayout then
+		listLayout.Padding = UDim.new(0, elementPadding)
+	end
+
+	applyCornerRadius(container, getLayoutToken("CornerRadius", "Container", 10))
 end
 
 local function ChangeTheme(Theme)
@@ -1694,6 +1765,7 @@ function RayfieldLibrary:CreateWindow(Settings)
 		end
 
 		TabPage.Parent = Elements
+		applyContainerLayout(TabPage)
 		if not FirstTab then
 			Elements.UIPageLayout.Animated = false
 			Elements.UIPageLayout:JumpTo(TabPage)
@@ -1772,6 +1844,8 @@ function RayfieldLibrary:CreateWindow(Settings)
 			Button.Title.Text = ButtonSettings.Name
 			Button.Visible = true
 			Button.Parent = TabPage
+			Button.Size = UDim2.new(1, -getLayoutToken("Padding", "Element", 10), 0, getLayoutToken("Heights", "Element", 45))
+			applyCornerRadius(Button, getLayoutToken("CornerRadius", "Button", getLayoutToken("CornerRadius", "Element", 6)))
 
 			Button.BackgroundTransparency = 1
 			Button.UIStroke.Transparency = 1
@@ -2256,6 +2330,8 @@ function RayfieldLibrary:CreateWindow(Settings)
 			Input.Title.Text = InputSettings.Name
 			Input.Visible = true
 			Input.Parent = TabPage
+			Input.Size = UDim2.new(1, -getLayoutToken("Padding", "Element", 10), 0, getLayoutToken("Heights", "Element", 45))
+			applyCornerRadius(Input, getLayoutToken("CornerRadius", "Input", getLayoutToken("CornerRadius", "Element", 6)))
 
 			Input.BackgroundTransparency = 1
 			Input.UIStroke.Transparency = 1
@@ -2265,13 +2341,14 @@ function RayfieldLibrary:CreateWindow(Settings)
 
 			Input.InputFrame.BackgroundColor3 = SelectedTheme.InputBackground
 			Input.InputFrame.UIStroke.Color = SelectedTheme.InputStroke
+			applyCornerRadius(Input.InputFrame, getLayoutToken("CornerRadius", "Input", getLayoutToken("CornerRadius", "Element", 6)))
 
 			TweenService:Create(Input, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = getThemeTransparency(SelectedTheme, "ElementTransparency", 0)}):Play()
 			TweenService:Create(Input.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
 			TweenService:Create(Input.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()	
 
 			Input.InputFrame.InputBox.PlaceholderText = InputSettings.PlaceholderText
-			Input.InputFrame.Size = UDim2.new(0, Input.InputFrame.InputBox.TextBounds.X + 24, 0, 30)
+			Input.InputFrame.Size = UDim2.new(0, Input.InputFrame.InputBox.TextBounds.X + 24, 0, getLayoutToken("Heights", "InputField", 30))
 
 			Input.InputFrame.InputBox.FocusLost:Connect(function()
 				local Success, Response = pcall(function()
@@ -2307,7 +2384,7 @@ function RayfieldLibrary:CreateWindow(Settings)
 			end)
 
 			Input.InputFrame.InputBox:GetPropertyChangedSignal("Text"):Connect(function()
-				TweenService:Create(Input.InputFrame, TweenInfo.new(0.55, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Size = UDim2.new(0, Input.InputFrame.InputBox.TextBounds.X + 24, 0, 30)}):Play()
+				TweenService:Create(Input.InputFrame, TweenInfo.new(0.55, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Size = UDim2.new(0, Input.InputFrame.InputBox.TextBounds.X + 24, 0, getLayoutToken("Heights", "InputField", 30))}):Play()
 			end)
 
 			function InputSettings:Set(text)
@@ -2931,6 +3008,8 @@ function RayfieldLibrary:CreateWindow(Settings)
 			Slider.Title.Text = SliderSettings.Name
 			Slider.Visible = true
 			Slider.Parent = TabPage
+			Slider.Size = UDim2.new(1, -getLayoutToken("Padding", "Element", 10), 0, getLayoutToken("Heights", "Element", 45))
+			applyCornerRadius(Slider, getLayoutToken("CornerRadius", "Slider", getLayoutToken("CornerRadius", "Element", 6)))
 
 			Slider.BackgroundTransparency = 1
 			Slider.UIStroke.Transparency = 1
@@ -2944,6 +3023,8 @@ function RayfieldLibrary:CreateWindow(Settings)
 			Slider.Main.UIStroke.Color = SelectedTheme.SliderStroke
 			Slider.Main.Progress.UIStroke.Color = SelectedTheme.SliderStroke
 			Slider.Main.Progress.BackgroundColor3 = SelectedTheme.SliderProgress
+			applyCornerRadius(Slider.Main, getLayoutToken("CornerRadius", "Slider", getLayoutToken("CornerRadius", "Element", 6)))
+			applyCornerRadius(Slider.Main.Progress, getLayoutToken("CornerRadius", "Slider", getLayoutToken("CornerRadius", "Element", 6)))
 
 			TweenService:Create(Slider, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {BackgroundTransparency = getThemeTransparency(SelectedTheme, "ElementTransparency", 0)}):Play()
 			TweenService:Create(Slider.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
