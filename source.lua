@@ -588,58 +588,22 @@ local function getThemeTransparency(theme, key, fallback)
 	return value
 end
 
-local function getLayoutToken(category, key, fallback)
-	local tokens = RayfieldLibrary.LayoutTokens
-	if not tokens then
-		return fallback
+local function normalizeElementState(state)
+	if not state then
+		return "default"
 	end
 
-	local group = tokens[category]
-	if not group then
-		return fallback
+	state = string.lower(state)
+	if state == "default" or state == "disabled" or state == "loading" or state == "error" or state == "success" then
+		return state
 	end
 
-	local value = group[key]
-	if value == nil then
-		return fallback
-	end
-
-	return value
+	return "default"
 end
 
-local function applyCornerRadius(instance, radius)
-	if not instance or not radius then
-		return
-	end
-
-	local corner = instance:FindFirstChildWhichIsA("UICorner")
-	if corner then
-		corner.CornerRadius = UDim.new(0, radius)
-	end
-end
-
-local function applyContainerLayout(container)
-	if not container then
-		return
-	end
-
-	local containerPadding = getLayoutToken("Padding", "Container", 12)
-	local elementPadding = getLayoutToken("Padding", "Element", 10)
-
-	local padding = container:FindFirstChildWhichIsA("UIPadding")
-	if padding then
-		padding.PaddingTop = UDim.new(0, containerPadding)
-		padding.PaddingBottom = UDim.new(0, containerPadding)
-		padding.PaddingLeft = UDim.new(0, containerPadding)
-		padding.PaddingRight = UDim.new(0, containerPadding)
-	end
-
-	local listLayout = container:FindFirstChildWhichIsA("UIListLayout")
-	if listLayout then
-		listLayout.Padding = UDim.new(0, elementPadding)
-	end
-
-	applyCornerRadius(container, getLayoutToken("CornerRadius", "Container", 10))
+local function stateAllowsInput(state)
+	state = normalizeElementState(state)
+	return state ~= "disabled" and state ~= "loading"
 end
 
 local function ChangeTheme(Theme)
@@ -1855,8 +1819,62 @@ function RayfieldLibrary:CreateWindow(Settings)
 			TweenService:Create(Button.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
 			TweenService:Create(Button.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()	
 
+			ButtonSettings.State = normalizeElementState(ButtonSettings.State)
+			local function applyButtonState(state)
+				state = normalizeElementState(state)
+				ButtonSettings.State = state
+				local allowInput = stateAllowsInput(state)
+
+				Button.Interact.Active = allowInput
+				Button.Interact.AutoButtonColor = allowInput
+
+				local backgroundColor = SelectedTheme.ElementBackground
+				local strokeColor = SelectedTheme.ElementStroke
+				local titleTransparency = 0
+				local indicatorTransparency = 0.9
+
+				if state == "disabled" then
+					backgroundColor = SelectedTheme.SecondaryElementBackground
+					strokeColor = SelectedTheme.SecondaryElementStroke
+					titleTransparency = 0.5
+					indicatorTransparency = 1
+				elseif state == "loading" then
+					backgroundColor = SelectedTheme.ElementBackgroundHover
+					strokeColor = SelectedTheme.ElementStroke
+					titleTransparency = 0.3
+					indicatorTransparency = 1
+				elseif state == "error" then
+					backgroundColor = Color3.fromRGB(85, 0, 0)
+					strokeColor = Color3.fromRGB(130, 0, 0)
+				elseif state == "success" then
+					backgroundColor = Color3.fromRGB(0, 85, 0)
+					strokeColor = Color3.fromRGB(0, 120, 0)
+				end
+
+				TweenService:Create(Button, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {BackgroundColor3 = backgroundColor}):Play()
+				TweenService:Create(Button.UIStroke, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {Color = strokeColor}):Play()
+				TweenService:Create(Button.Title, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {TextTransparency = titleTransparency}):Play()
+				TweenService:Create(Button.ElementIndicator, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {TextTransparency = indicatorTransparency}):Play()
+			end
+			applyButtonState(ButtonSettings.State)
+
 
 			Button.Interact.MouseButton1Click:Connect(function()
+				if not stateAllowsInput(ButtonSettings.State) then
+					return
+				end
+
+				if ButtonSettings.State ~= "default" then
+					local Success, Response = pcall(ButtonSettings.Callback)
+					if not Success then
+						print("Rayfield | "..ButtonSettings.Name.." Callback Error " ..tostring(Response))
+						warn('Check docs.sirius.menu for help with Rayfield specific development.')
+					else
+						SaveConfiguration()
+					end
+					return
+				end
+
 				local Success, Response = pcall(ButtonSettings.Callback)
 				if not Success then
 					TweenService:Create(Button, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = Color3.fromRGB(85, 0, 0)}):Play()
@@ -1883,11 +1901,19 @@ function RayfieldLibrary:CreateWindow(Settings)
 			end)
 
 			Button.MouseEnter:Connect(function()
+				if ButtonSettings.State ~= "default" then
+					return
+				end
+
 				TweenService:Create(Button, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackgroundHover}):Play()
 				TweenService:Create(Button.ElementIndicator, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {TextTransparency = 0.7}):Play()
 			end)
 
 			Button.MouseLeave:Connect(function()
+				if ButtonSettings.State ~= "default" then
+					return
+				end
+
 				TweenService:Create(Button, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
 				TweenService:Create(Button.ElementIndicator, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {TextTransparency = 0.9}):Play()
 			end)
@@ -1896,6 +1922,14 @@ function RayfieldLibrary:CreateWindow(Settings)
 				Button.Title.Text = NewButton
 				Button.Name = NewButton
 			end
+
+			function ButtonValue:SetState(NewState)
+				applyButtonState(NewState)
+			end
+
+			Rayfield.Main:GetPropertyChangedSignal('BackgroundColor3'):Connect(function()
+				applyButtonState(ButtonSettings.State)
+			end)
 
 			return ButtonValue
 		end
@@ -1934,12 +1968,86 @@ function RayfieldLibrary:CreateWindow(Settings)
 			ColorPicker.HexInput.BackgroundColor3 = SelectedTheme.InputBackground
 			ColorPicker.HexInput.UIStroke.Color = SelectedTheme.InputStroke
 
+			ColorPickerSettings.State = normalizeElementState(ColorPickerSettings.State)
+			local function applyColorPickerState(state)
+				state = normalizeElementState(state)
+				ColorPickerSettings.State = state
+				local allowInput = stateAllowsInput(state)
+
+				ColorPicker.Interact.Active = allowInput
+				ColorPicker.Interact.AutoButtonColor = allowInput
+				Main.Active = allowInput
+				Main.MainPoint.Active = allowInput
+				Slider.Active = allowInput
+				Slider.SliderPoint.Active = allowInput
+				ColorPicker.HexInput.InputBox.TextEditable = allowInput
+				ColorPicker.HexInput.InputBox.Active = allowInput
+
+				for _, rgbinput in ipairs(ColorPicker.RGB:GetChildren()) do
+					if rgbinput:IsA("Frame") then
+						rgbinput.InputBox.TextEditable = allowInput
+						rgbinput.InputBox.Active = allowInput
+					end
+				end
+
+				local backgroundColor = SelectedTheme.ElementBackground
+				local strokeColor = SelectedTheme.ElementStroke
+				local titleTransparency = 0
+				local inputTransparency = 0
+				local inputBackground = SelectedTheme.InputBackground
+				local inputStroke = SelectedTheme.InputStroke
+
+				if state == "disabled" then
+					backgroundColor = SelectedTheme.SecondaryElementBackground
+					strokeColor = SelectedTheme.SecondaryElementStroke
+					titleTransparency = 0.5
+					inputTransparency = 0.5
+					inputBackground = SelectedTheme.SecondaryElementBackground
+					inputStroke = SelectedTheme.SecondaryElementStroke
+				elseif state == "loading" then
+					backgroundColor = SelectedTheme.ElementBackgroundHover
+					strokeColor = SelectedTheme.ElementStroke
+					titleTransparency = 0.3
+					inputTransparency = 0.3
+				elseif state == "error" then
+					backgroundColor = Color3.fromRGB(85, 0, 0)
+					strokeColor = Color3.fromRGB(130, 0, 0)
+					inputBackground = backgroundColor
+					inputStroke = strokeColor
+				elseif state == "success" then
+					backgroundColor = Color3.fromRGB(0, 85, 0)
+					strokeColor = Color3.fromRGB(0, 120, 0)
+					inputBackground = backgroundColor
+					inputStroke = strokeColor
+				end
+
+				TweenService:Create(ColorPicker, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {BackgroundColor3 = backgroundColor}):Play()
+				TweenService:Create(ColorPicker.UIStroke, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {Color = strokeColor}):Play()
+				TweenService:Create(ColorPicker.Title, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {TextTransparency = titleTransparency}):Play()
+				TweenService:Create(ColorPicker.HexInput.InputBox, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {TextTransparency = inputTransparency}):Play()
+				TweenService:Create(ColorPicker.HexInput, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {BackgroundColor3 = inputBackground}):Play()
+				TweenService:Create(ColorPicker.HexInput.UIStroke, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {Color = inputStroke}):Play()
+
+				for _, rgbinput in ipairs(ColorPicker.RGB:GetChildren()) do
+					if rgbinput:IsA("Frame") then
+						TweenService:Create(rgbinput, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {BackgroundColor3 = inputBackground}):Play()
+						TweenService:Create(rgbinput.UIStroke, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {Color = inputStroke}):Play()
+						TweenService:Create(rgbinput.InputBox, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {TextTransparency = inputTransparency}):Play()
+					end
+				end
+			end
+			applyColorPickerState(ColorPickerSettings.State)
+
 			local opened = false 
 			local mouse = game.Players.LocalPlayer:GetMouse()
 			Main.Image = "http://www.roblox.com/asset/?id=11415645739"
 			local mainDragging = false 
 			local sliderDragging = false 
 			ColorPicker.Interact.MouseButton1Down:Connect(function()
+				if ColorPickerSettings.State ~= "default" then
+					return
+				end
+
 				task.spawn(function()
 					TweenService:Create(ColorPicker, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackgroundHover}):Play()
 					TweenService:Create(ColorPicker.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
@@ -1983,19 +2091,35 @@ function RayfieldLibrary:CreateWindow(Settings)
 					sliderDragging = false
 				end end)
 			Main.MouseButton1Down:Connect(function()
+				if ColorPickerSettings.State ~= "default" then
+					return
+				end
+
 				if opened then
 					mainDragging = true 
 				end
 			end)
 			Main.MainPoint.MouseButton1Down:Connect(function()
+				if ColorPickerSettings.State ~= "default" then
+					return
+				end
+
 				if opened then
 					mainDragging = true 
 				end
 			end)
 			Slider.MouseButton1Down:Connect(function()
+				if ColorPickerSettings.State ~= "default" then
+					return
+				end
+
 				sliderDragging = true 
 			end)
 			Slider.SliderPoint.MouseButton1Down:Connect(function()
+				if ColorPickerSettings.State ~= "default" then
+					return
+				end
+
 				sliderDragging = true 
 			end)
 			local h,s,v = ColorPickerSettings.Color:ToHSV()
@@ -2022,6 +2146,10 @@ function RayfieldLibrary:CreateWindow(Settings)
 			end
 			setDisplay()
 			ColorPicker.HexInput.InputBox.FocusLost:Connect(function()
+				if not stateAllowsInput(ColorPickerSettings.State) then
+					return
+				end
+
 				if not pcall(function()
 						local r, g, b = string.match(ColorPicker.HexInput.InputBox.Text, "^#?(%w%w)(%w%w)(%w%w)$")
 						local rgbColor = Color3.fromRGB(tonumber(r, 16),tonumber(g, 16), tonumber(b, 16))
@@ -2058,14 +2186,26 @@ function RayfieldLibrary:CreateWindow(Settings)
 				SaveConfiguration()
 			end
 			ColorPicker.RGB.RInput.InputBox.FocusLost:connect(function()
+				if not stateAllowsInput(ColorPickerSettings.State) then
+					return
+				end
+
 				rgbBoxes(ColorPicker.RGB.RInput.InputBox,"R")
 				pcall(function()ColorPickerSettings.Callback(Color3.fromHSV(h,s,v))end)
 			end)
 			ColorPicker.RGB.GInput.InputBox.FocusLost:connect(function()
+				if not stateAllowsInput(ColorPickerSettings.State) then
+					return
+				end
+
 				rgbBoxes(ColorPicker.RGB.GInput.InputBox,"G")
 				pcall(function()ColorPickerSettings.Callback(Color3.fromHSV(h,s,v))end)
 			end)
 			ColorPicker.RGB.BInput.InputBox.FocusLost:connect(function()
+				if not stateAllowsInput(ColorPickerSettings.State) then
+					return
+				end
+
 				rgbBoxes(ColorPicker.RGB.BInput.InputBox,"B")
 				pcall(function()ColorPickerSettings.Callback(Color3.fromHSV(h,s,v))end)
 			end)
@@ -2123,24 +2263,28 @@ function RayfieldLibrary:CreateWindow(Settings)
 				setDisplay()
 			end
 
+			function ColorPickerSettings:SetState(NewState)
+				applyColorPickerState(NewState)
+			end
+
 			ColorPicker.MouseEnter:Connect(function()
+				if ColorPickerSettings.State ~= "default" then
+					return
+				end
+
 				TweenService:Create(ColorPicker, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackgroundHover}):Play()
 			end)
 
 			ColorPicker.MouseLeave:Connect(function()
+				if ColorPickerSettings.State ~= "default" then
+					return
+				end
+
 				TweenService:Create(ColorPicker, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
 			end)
 
 			Rayfield.Main:GetPropertyChangedSignal('BackgroundColor3'):Connect(function()
-				for _, rgbinput in ipairs(ColorPicker.RGB:GetChildren()) do
-					if rgbinput:IsA("Frame") then
-						rgbinput.BackgroundColor3 = SelectedTheme.InputBackground
-						rgbinput.UIStroke.Color = SelectedTheme.InputStroke
-					end
-				end
-
-				ColorPicker.HexInput.BackgroundColor3 = SelectedTheme.InputBackground
-				ColorPicker.HexInput.UIStroke.Color = SelectedTheme.InputStroke
+				applyColorPickerState(ColorPickerSettings.State)
 			end)
 
 			return ColorPickerSettings
@@ -2347,10 +2491,63 @@ function RayfieldLibrary:CreateWindow(Settings)
 			TweenService:Create(Input.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
 			TweenService:Create(Input.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()	
 
+			InputSettings.State = normalizeElementState(InputSettings.State)
+			local function applyInputState(state)
+				state = normalizeElementState(state)
+				InputSettings.State = state
+				local allowInput = stateAllowsInput(state)
+
+				Input.InputFrame.InputBox.TextEditable = allowInput
+				Input.InputFrame.InputBox.Active = allowInput
+
+				local backgroundColor = SelectedTheme.ElementBackground
+				local strokeColor = SelectedTheme.ElementStroke
+				local titleTransparency = 0
+				local inputTextTransparency = 0
+				local frameBackground = SelectedTheme.InputBackground
+				local frameStroke = SelectedTheme.InputStroke
+
+				if state == "disabled" then
+					backgroundColor = SelectedTheme.SecondaryElementBackground
+					strokeColor = SelectedTheme.SecondaryElementStroke
+					titleTransparency = 0.5
+					inputTextTransparency = 0.5
+					frameBackground = SelectedTheme.SecondaryElementBackground
+					frameStroke = SelectedTheme.SecondaryElementStroke
+				elseif state == "loading" then
+					backgroundColor = SelectedTheme.ElementBackgroundHover
+					strokeColor = SelectedTheme.ElementStroke
+					titleTransparency = 0.3
+					inputTextTransparency = 0.3
+				elseif state == "error" then
+					backgroundColor = Color3.fromRGB(85, 0, 0)
+					strokeColor = Color3.fromRGB(130, 0, 0)
+					frameBackground = backgroundColor
+					frameStroke = strokeColor
+				elseif state == "success" then
+					backgroundColor = Color3.fromRGB(0, 85, 0)
+					strokeColor = Color3.fromRGB(0, 120, 0)
+					frameBackground = backgroundColor
+					frameStroke = strokeColor
+				end
+
+				TweenService:Create(Input, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {BackgroundColor3 = backgroundColor}):Play()
+				TweenService:Create(Input.UIStroke, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {Color = strokeColor}):Play()
+				TweenService:Create(Input.Title, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {TextTransparency = titleTransparency}):Play()
+				TweenService:Create(Input.InputFrame, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {BackgroundColor3 = frameBackground}):Play()
+				TweenService:Create(Input.InputFrame.UIStroke, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {Color = frameStroke}):Play()
+				TweenService:Create(Input.InputFrame.InputBox, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {TextTransparency = inputTextTransparency}):Play()
+			end
+			applyInputState(InputSettings.State)
+
 			Input.InputFrame.InputBox.PlaceholderText = InputSettings.PlaceholderText
 			Input.InputFrame.Size = UDim2.new(0, Input.InputFrame.InputBox.TextBounds.X + 24, 0, getLayoutToken("Heights", "InputField", 30))
 
 			Input.InputFrame.InputBox.FocusLost:Connect(function()
+				if not stateAllowsInput(InputSettings.State) then
+					return
+				end
+
 				local Success, Response = pcall(function()
 					InputSettings.Callback(Input.InputFrame.InputBox.Text)
 					InputSettings.CurrentValue = Input.InputFrame.InputBox.Text
@@ -2376,20 +2573,36 @@ function RayfieldLibrary:CreateWindow(Settings)
 			end)
 
 			Input.MouseEnter:Connect(function()
+				if InputSettings.State ~= "default" then
+					return
+				end
+
 				TweenService:Create(Input, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackgroundHover}):Play()
 			end)
 
 			Input.MouseLeave:Connect(function()
+				if InputSettings.State ~= "default" then
+					return
+				end
+
 				TweenService:Create(Input, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
 			end)
 
 			Input.InputFrame.InputBox:GetPropertyChangedSignal("Text"):Connect(function()
-				TweenService:Create(Input.InputFrame, TweenInfo.new(0.55, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Size = UDim2.new(0, Input.InputFrame.InputBox.TextBounds.X + 24, 0, getLayoutToken("Heights", "InputField", 30))}):Play()
+				if not stateAllowsInput(InputSettings.State) then
+					return
+				end
+
+				TweenService:Create(Input.InputFrame, TweenInfo.new(0.55, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Size = UDim2.new(0, Input.InputFrame.InputBox.TextBounds.X + 24, 0, 30)}):Play()
 			end)
 
 			function InputSettings:Set(text)
 				Input.InputFrame.InputBox.Text = text
 				SaveConfiguration()
+			end
+
+			function InputSettings:SetState(NewState)
+				applyInputState(NewState)
 			end
 
 			if Settings.ConfigurationSaving then
@@ -2399,8 +2612,7 @@ function RayfieldLibrary:CreateWindow(Settings)
 			end
 
 			Rayfield.Main:GetPropertyChangedSignal('BackgroundColor3'):Connect(function()
-				Input.InputFrame.BackgroundColor3 = SelectedTheme.InputBackground
-				Input.InputFrame.UIStroke.Color = SelectedTheme.InputStroke
+				applyInputState(InputSettings.State)
 			end)
 
 			return InputSettings
@@ -2505,6 +2717,56 @@ function RayfieldLibrary:CreateWindow(Settings)
 			TweenService:Create(Dropdown.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
 			TweenService:Create(Dropdown.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()	
 
+			DropdownSettings.State = normalizeElementState(DropdownSettings.State)
+			local function applyDropdownState(state)
+				state = normalizeElementState(state)
+				DropdownSettings.State = state
+				local allowInput = stateAllowsInput(state)
+
+				Dropdown.Interact.Active = allowInput
+				Dropdown.Interact.AutoButtonColor = allowInput
+
+				local backgroundColor = SelectedTheme.ElementBackground
+				local strokeColor = SelectedTheme.ElementStroke
+				local titleTransparency = 0
+				local selectedTransparency = 0
+				local toggleTransparency = 0
+
+				if state == "disabled" then
+					backgroundColor = SelectedTheme.SecondaryElementBackground
+					strokeColor = SelectedTheme.SecondaryElementStroke
+					titleTransparency = 0.5
+					selectedTransparency = 0.5
+					toggleTransparency = 0.5
+				elseif state == "loading" then
+					backgroundColor = SelectedTheme.ElementBackgroundHover
+					strokeColor = SelectedTheme.ElementStroke
+					titleTransparency = 0.3
+					selectedTransparency = 0.3
+					toggleTransparency = 0.3
+				elseif state == "error" then
+					backgroundColor = Color3.fromRGB(85, 0, 0)
+					strokeColor = Color3.fromRGB(130, 0, 0)
+				elseif state == "success" then
+					backgroundColor = Color3.fromRGB(0, 85, 0)
+					strokeColor = Color3.fromRGB(0, 120, 0)
+				end
+
+				TweenService:Create(Dropdown, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {BackgroundColor3 = backgroundColor}):Play()
+				TweenService:Create(Dropdown.UIStroke, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {Color = strokeColor}):Play()
+				TweenService:Create(Dropdown.Title, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {TextTransparency = titleTransparency}):Play()
+				TweenService:Create(Dropdown.Selected, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {TextTransparency = selectedTransparency}):Play()
+				TweenService:Create(Dropdown.Toggle, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {ImageTransparency = toggleTransparency}):Play()
+
+				for _, DropdownOpt in ipairs(Dropdown.List:GetChildren()) do
+					if DropdownOpt.ClassName == "Frame" and DropdownOpt.Name ~= "Placeholder" then
+						DropdownOpt.Interact.Active = allowInput
+						TweenService:Create(DropdownOpt.Title, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {TextTransparency = titleTransparency}):Play()
+					end
+				end
+			end
+			applyDropdownState(DropdownSettings.State)
+
 			for _, ununusedoption in ipairs(Dropdown.List:GetChildren()) do
 				if ununusedoption.ClassName == "Frame" and ununusedoption.Name ~= "Placeholder" and ununusedoption.Name ~= searchFrameName then
 					ununusedoption:Destroy()
@@ -2557,6 +2819,10 @@ function RayfieldLibrary:CreateWindow(Settings)
 			Dropdown.Toggle.Rotation = 180
 
 			Dropdown.Interact.MouseButton1Click:Connect(function()
+				if not stateAllowsInput(DropdownSettings.State) then
+					return
+				end
+
 				TweenService:Create(Dropdown, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackgroundHover}):Play()
 				TweenService:Create(Dropdown.UIStroke, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
 				task.wait(0.1)
@@ -2616,12 +2882,20 @@ function RayfieldLibrary:CreateWindow(Settings)
 			end)
 
 			Dropdown.MouseEnter:Connect(function()
+				if DropdownSettings.State ~= "default" then
+					return
+				end
+
 				if not Dropdown.List.Visible then
 					TweenService:Create(Dropdown, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackgroundHover}):Play()
 				end
 			end)
 
 			Dropdown.MouseLeave:Connect(function()
+				if DropdownSettings.State ~= "default" then
+					return
+				end
+
 				TweenService:Create(Dropdown, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
 			end)
 
@@ -2651,6 +2925,10 @@ function RayfieldLibrary:CreateWindow(Settings)
 
 					DropdownOption.Interact.ZIndex = 50
 					DropdownOption.Interact.MouseButton1Click:Connect(function()
+						if not stateAllowsInput(DropdownSettings.State) then
+							return
+						end
+
 						if not DropdownSettings.MultipleOptions and table.find(DropdownSettings.CurrentOption, Option) then 
 							return
 						end
@@ -2741,6 +3019,8 @@ function RayfieldLibrary:CreateWindow(Settings)
 						DropdownOption.UIStroke.Color = SelectedTheme.ElementStroke
 					end)
 				end
+
+				applyDropdownState(DropdownSettings.State)
 			end
 			SetDropdownOptions()
 			if isSearchable and searchBox then
@@ -2829,6 +3109,10 @@ function RayfieldLibrary:CreateWindow(Settings)
 				end
 			end
 
+			function DropdownSettings:SetState(NewState)
+				applyDropdownState(NewState)
+			end
+
 			if Settings.ConfigurationSaving then
 				if Settings.ConfigurationSaving.Enabled and DropdownSettings.Flag then
 					RayfieldLibrary.Flags[DropdownSettings.Flag] = DropdownSettings
@@ -2837,13 +3121,7 @@ function RayfieldLibrary:CreateWindow(Settings)
 
 			Rayfield.Main:GetPropertyChangedSignal('BackgroundColor3'):Connect(function()
 				Dropdown.Toggle.ImageColor3 = SelectedTheme.TextColor
-				TweenService:Create(Dropdown, TweenInfo.new(0.4, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
-				if isSearchable and searchFrame and searchBox then
-					searchFrame.BackgroundColor3 = SelectedTheme.InputBackground
-					searchFrame.UIStroke.Color = SelectedTheme.InputStroke
-					searchBox.TextColor3 = SelectedTheme.TextColor
-					searchBox.PlaceholderColor3 = SelectedTheme.PlaceholderColor
-				end
+				applyDropdownState(DropdownSettings.State)
 			end)
 
 			return DropdownSettings
@@ -2869,10 +3147,63 @@ function RayfieldLibrary:CreateWindow(Settings)
 			TweenService:Create(Keybind.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
 			TweenService:Create(Keybind.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()	
 
+			KeybindSettings.State = normalizeElementState(KeybindSettings.State)
+			local function applyKeybindState(state)
+				state = normalizeElementState(state)
+				KeybindSettings.State = state
+				local allowInput = stateAllowsInput(state)
+
+				Keybind.KeybindFrame.KeybindBox.TextEditable = allowInput
+				Keybind.KeybindFrame.KeybindBox.Active = allowInput
+
+				local backgroundColor = SelectedTheme.ElementBackground
+				local strokeColor = SelectedTheme.ElementStroke
+				local titleTransparency = 0
+				local keybindTransparency = 0
+				local frameBackground = SelectedTheme.InputBackground
+				local frameStroke = SelectedTheme.InputStroke
+
+				if state == "disabled" then
+					backgroundColor = SelectedTheme.SecondaryElementBackground
+					strokeColor = SelectedTheme.SecondaryElementStroke
+					titleTransparency = 0.5
+					keybindTransparency = 0.5
+					frameBackground = SelectedTheme.SecondaryElementBackground
+					frameStroke = SelectedTheme.SecondaryElementStroke
+				elseif state == "loading" then
+					backgroundColor = SelectedTheme.ElementBackgroundHover
+					strokeColor = SelectedTheme.ElementStroke
+					titleTransparency = 0.3
+					keybindTransparency = 0.3
+				elseif state == "error" then
+					backgroundColor = Color3.fromRGB(85, 0, 0)
+					strokeColor = Color3.fromRGB(130, 0, 0)
+					frameBackground = backgroundColor
+					frameStroke = strokeColor
+				elseif state == "success" then
+					backgroundColor = Color3.fromRGB(0, 85, 0)
+					strokeColor = Color3.fromRGB(0, 120, 0)
+					frameBackground = backgroundColor
+					frameStroke = strokeColor
+				end
+
+				TweenService:Create(Keybind, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {BackgroundColor3 = backgroundColor}):Play()
+				TweenService:Create(Keybind.UIStroke, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {Color = strokeColor}):Play()
+				TweenService:Create(Keybind.Title, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {TextTransparency = titleTransparency}):Play()
+				TweenService:Create(Keybind.KeybindFrame, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {BackgroundColor3 = frameBackground}):Play()
+				TweenService:Create(Keybind.KeybindFrame.UIStroke, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {Color = frameStroke}):Play()
+				TweenService:Create(Keybind.KeybindFrame.KeybindBox, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {TextTransparency = keybindTransparency}):Play()
+			end
+			applyKeybindState(KeybindSettings.State)
+
 			Keybind.KeybindFrame.KeybindBox.Text = KeybindSettings.CurrentKeybind
 			Keybind.KeybindFrame.Size = UDim2.new(0, Keybind.KeybindFrame.KeybindBox.TextBounds.X + 24, 0, 30)
 
 			Keybind.KeybindFrame.KeybindBox.Focused:Connect(function()
+				if not stateAllowsInput(KeybindSettings.State) then
+					return
+				end
+
 				CheckingForKey = true
 				Keybind.KeybindFrame.KeybindBox.Text = ""
 			end)
@@ -2885,14 +3216,25 @@ function RayfieldLibrary:CreateWindow(Settings)
 			end)
 
 			Keybind.MouseEnter:Connect(function()
+				if KeybindSettings.State ~= "default" then
+					return
+				end
+
 				TweenService:Create(Keybind, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackgroundHover}):Play()
 			end)
 
 			Keybind.MouseLeave:Connect(function()
+				if KeybindSettings.State ~= "default" then
+					return
+				end
+
 				TweenService:Create(Keybind, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
 			end)
 
 			UserInputService.InputBegan:Connect(function(input, processed)
+				if not stateAllowsInput(KeybindSettings.State) then
+					return
+				end
 
 				if CheckingForKey then
 					if input.KeyCode ~= Enum.KeyCode.Unknown and input.KeyCode ~= Enum.KeyCode.K then
@@ -2952,6 +3294,10 @@ function RayfieldLibrary:CreateWindow(Settings)
 				Keybind.KeybindFrame.KeybindBox:ReleaseFocus()
 				SaveConfiguration()
 			end
+
+			function KeybindSettings:SetState(NewState)
+				applyKeybindState(NewState)
+			end
 			
 			if Settings.ConfigurationSaving then
 				if Settings.ConfigurationSaving.Enabled and KeybindSettings.Flag then
@@ -2960,8 +3306,7 @@ function RayfieldLibrary:CreateWindow(Settings)
 			end
 
 			Rayfield.Main:GetPropertyChangedSignal('BackgroundColor3'):Connect(function()
-				Keybind.KeybindFrame.BackgroundColor3 = SelectedTheme.InputBackground
-				Keybind.KeybindFrame.UIStroke.Color = SelectedTheme.InputStroke
+				applyKeybindState(KeybindSettings.State)
 			end)
 
 			return KeybindSettings
@@ -2990,27 +3335,89 @@ function RayfieldLibrary:CreateWindow(Settings)
 			TweenService:Create(Toggle.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
 			TweenService:Create(Toggle.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()	
 
-			if ToggleSettings.CurrentValue == true then
-				Toggle.Switch.Indicator.Position = UDim2.new(1, -20, 0.5, 0)
-				Toggle.Switch.Indicator.UIStroke.Color = SelectedTheme.ToggleEnabledStroke
-				Toggle.Switch.Indicator.BackgroundColor3 = SelectedTheme.ToggleEnabled
-				Toggle.Switch.UIStroke.Color = SelectedTheme.ToggleEnabledOuterStroke
-			else
-				Toggle.Switch.Indicator.Position = UDim2.new(1, -40, 0.5, 0)
-				Toggle.Switch.Indicator.UIStroke.Color = SelectedTheme.ToggleDisabledStroke
-				Toggle.Switch.Indicator.BackgroundColor3 = SelectedTheme.ToggleDisabled
-				Toggle.Switch.UIStroke.Color = SelectedTheme.ToggleDisabledOuterStroke
+			ToggleSettings.State = normalizeElementState(ToggleSettings.State)
+			local function applyToggleIndicator(useDisabledStyle)
+				if ToggleSettings.CurrentValue == true then
+					Toggle.Switch.Indicator.Position = UDim2.new(1, -20, 0.5, 0)
+				else
+					Toggle.Switch.Indicator.Position = UDim2.new(1, -40, 0.5, 0)
+				end
+
+				if useDisabledStyle then
+					Toggle.Switch.Indicator.UIStroke.Color = SelectedTheme.ToggleDisabledStroke
+					Toggle.Switch.Indicator.BackgroundColor3 = SelectedTheme.ToggleDisabled
+					Toggle.Switch.UIStroke.Color = SelectedTheme.ToggleDisabledOuterStroke
+					return
+				end
+
+				if ToggleSettings.CurrentValue == true then
+					Toggle.Switch.Indicator.UIStroke.Color = SelectedTheme.ToggleEnabledStroke
+					Toggle.Switch.Indicator.BackgroundColor3 = SelectedTheme.ToggleEnabled
+					Toggle.Switch.UIStroke.Color = SelectedTheme.ToggleEnabledOuterStroke
+				else
+					Toggle.Switch.Indicator.UIStroke.Color = SelectedTheme.ToggleDisabledStroke
+					Toggle.Switch.Indicator.BackgroundColor3 = SelectedTheme.ToggleDisabled
+					Toggle.Switch.UIStroke.Color = SelectedTheme.ToggleDisabledOuterStroke
+				end
 			end
 
+			local function applyToggleState(state)
+				state = normalizeElementState(state)
+				ToggleSettings.State = state
+				local allowInput = stateAllowsInput(state)
+
+				Toggle.Interact.Active = allowInput
+				Toggle.Interact.AutoButtonColor = allowInput
+
+				local backgroundColor = SelectedTheme.ElementBackground
+				local strokeColor = SelectedTheme.ElementStroke
+				local titleTransparency = 0
+
+				if state == "disabled" then
+					backgroundColor = SelectedTheme.SecondaryElementBackground
+					strokeColor = SelectedTheme.SecondaryElementStroke
+					titleTransparency = 0.5
+				elseif state == "loading" then
+					backgroundColor = SelectedTheme.ElementBackgroundHover
+					strokeColor = SelectedTheme.ElementStroke
+					titleTransparency = 0.3
+				elseif state == "error" then
+					backgroundColor = Color3.fromRGB(85, 0, 0)
+					strokeColor = Color3.fromRGB(130, 0, 0)
+				elseif state == "success" then
+					backgroundColor = Color3.fromRGB(0, 85, 0)
+					strokeColor = Color3.fromRGB(0, 120, 0)
+				end
+
+				TweenService:Create(Toggle, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {BackgroundColor3 = backgroundColor}):Play()
+				TweenService:Create(Toggle.UIStroke, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {Color = strokeColor}):Play()
+				TweenService:Create(Toggle.Title, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {TextTransparency = titleTransparency}):Play()
+
+				applyToggleIndicator(state == "disabled" or state == "loading")
+			end
+			applyToggleState(ToggleSettings.State)
+
 			Toggle.MouseEnter:Connect(function()
+				if ToggleSettings.State ~= "default" then
+					return
+				end
+
 				TweenService:Create(Toggle, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackgroundHover}):Play()
 			end)
 
 			Toggle.MouseLeave:Connect(function()
+				if ToggleSettings.State ~= "default" then
+					return
+				end
+
 				TweenService:Create(Toggle, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
 			end)
 
 			Toggle.Interact.MouseButton1Click:Connect(function()
+				if ToggleSettings.State ~= "default" then
+					return
+				end
+
 				if ToggleSettings.CurrentValue == true then
 					ToggleSettings.CurrentValue = false
 					TweenService:Create(Toggle, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackgroundHover}):Play()
@@ -3053,6 +3460,13 @@ function RayfieldLibrary:CreateWindow(Settings)
 			end)
 
 			function ToggleSettings:Set(NewToggleValue)
+				if ToggleSettings.State ~= "default" then
+					ToggleSettings.CurrentValue = NewToggleValue
+					applyToggleState(ToggleSettings.State)
+					SaveConfiguration()
+					return
+				end
+
 				if NewToggleValue == true then
 					ToggleSettings.CurrentValue = true
 					TweenService:Create(Toggle, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackgroundHover}):Play()
@@ -3098,6 +3512,10 @@ function RayfieldLibrary:CreateWindow(Settings)
 				SaveConfiguration()
 			end
 
+			function ToggleSettings:SetState(NewState)
+				applyToggleState(NewState)
+			end
+
 			if Settings.ConfigurationSaving then
 				if Settings.ConfigurationSaving.Enabled and ToggleSettings.Flag then
 					RayfieldLibrary.Flags[ToggleSettings.Flag] = ToggleSettings
@@ -3112,16 +3530,7 @@ function RayfieldLibrary:CreateWindow(Settings)
 				end
 
 				task.wait()
-				
-				if not ToggleSettings.CurrentValue then
-					Toggle.Switch.Indicator.UIStroke.Color = SelectedTheme.ToggleDisabledStroke
-					Toggle.Switch.Indicator.BackgroundColor3 = SelectedTheme.ToggleDisabled
-					Toggle.Switch.UIStroke.Color = SelectedTheme.ToggleDisabledOuterStroke
-				else
-					Toggle.Switch.Indicator.UIStroke.Color = SelectedTheme.ToggleEnabledStroke
-					Toggle.Switch.Indicator.BackgroundColor3 = SelectedTheme.ToggleEnabled
-					Toggle.Switch.UIStroke.Color = SelectedTheme.ToggleEnabledOuterStroke
-				end
+				applyToggleState(ToggleSettings.State)
 			end)
 
 			return ToggleSettings
@@ -3157,6 +3566,60 @@ function RayfieldLibrary:CreateWindow(Settings)
 			TweenService:Create(Slider.UIStroke, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {Transparency = 0}):Play()
 			TweenService:Create(Slider.Title, TweenInfo.new(0.7, Enum.EasingStyle.Exponential), {TextTransparency = 0}):Play()	
 
+			SliderSettings.State = normalizeElementState(SliderSettings.State)
+			local function applySliderState(state)
+				state = normalizeElementState(state)
+				SliderSettings.State = state
+				local allowInput = stateAllowsInput(state)
+
+				Slider.Main.Interact.Active = allowInput
+
+				local backgroundColor = SelectedTheme.ElementBackground
+				local strokeColor = SelectedTheme.ElementStroke
+				local titleTransparency = 0
+				local infoTransparency = 0
+				local sliderBackground = SelectedTheme.SliderBackground
+				local sliderStroke = SelectedTheme.SliderStroke
+				local sliderProgress = SelectedTheme.SliderProgress
+
+				if state == "disabled" then
+					backgroundColor = SelectedTheme.SecondaryElementBackground
+					strokeColor = SelectedTheme.SecondaryElementStroke
+					titleTransparency = 0.5
+					infoTransparency = 0.5
+					sliderBackground = SelectedTheme.SecondaryElementBackground
+					sliderStroke = SelectedTheme.SecondaryElementStroke
+					sliderProgress = SelectedTheme.SecondaryElementBackground
+				elseif state == "loading" then
+					backgroundColor = SelectedTheme.ElementBackgroundHover
+					strokeColor = SelectedTheme.ElementStroke
+					titleTransparency = 0.3
+					infoTransparency = 0.3
+				elseif state == "error" then
+					backgroundColor = Color3.fromRGB(85, 0, 0)
+					strokeColor = Color3.fromRGB(130, 0, 0)
+					sliderBackground = backgroundColor
+					sliderStroke = strokeColor
+					sliderProgress = backgroundColor
+				elseif state == "success" then
+					backgroundColor = Color3.fromRGB(0, 85, 0)
+					strokeColor = Color3.fromRGB(0, 120, 0)
+					sliderBackground = backgroundColor
+					sliderStroke = strokeColor
+					sliderProgress = backgroundColor
+				end
+
+				TweenService:Create(Slider, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {BackgroundColor3 = backgroundColor}):Play()
+				TweenService:Create(Slider.UIStroke, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {Color = strokeColor}):Play()
+				TweenService:Create(Slider.Title, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {TextTransparency = titleTransparency}):Play()
+				TweenService:Create(Slider.Main.Information, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {TextTransparency = infoTransparency}):Play()
+				TweenService:Create(Slider.Main, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {BackgroundColor3 = sliderBackground}):Play()
+				TweenService:Create(Slider.Main.UIStroke, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {Color = sliderStroke}):Play()
+				TweenService:Create(Slider.Main.Progress, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {BackgroundColor3 = sliderProgress}):Play()
+				TweenService:Create(Slider.Main.Progress.UIStroke, TweenInfo.new(0.2, Enum.EasingStyle.Exponential), {Color = sliderStroke}):Play()
+			end
+			applySliderState(SliderSettings.State)
+
 			Slider.Main.Progress.Size =	UDim2.new(0, Slider.Main.AbsoluteSize.X * ((SliderSettings.CurrentValue + SliderSettings.Range[1]) / (SliderSettings.Range[2] - SliderSettings.Range[1])) > 5 and Slider.Main.AbsoluteSize.X * (SliderSettings.CurrentValue / (SliderSettings.Range[2] - SliderSettings.Range[1])) or 5, 1, 0)
 
 			if not SliderSettings.Suffix then
@@ -3166,14 +3629,26 @@ function RayfieldLibrary:CreateWindow(Settings)
 			end
 
 			Slider.MouseEnter:Connect(function()
+				if SliderSettings.State ~= "default" then
+					return
+				end
+
 				TweenService:Create(Slider, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackgroundHover}):Play()
 			end)
 
 			Slider.MouseLeave:Connect(function()
+				if SliderSettings.State ~= "default" then
+					return
+				end
+
 				TweenService:Create(Slider, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {BackgroundColor3 = SelectedTheme.ElementBackground}):Play()
 			end)
 
 			Slider.Main.Interact.InputBegan:Connect(function(Input)
+				if SliderSettings.State ~= "default" then
+					return
+				end
+
 				if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then 
 					TweenService:Create(Slider.Main.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
 					TweenService:Create(Slider.Main.Progress.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 1}):Play()
@@ -3182,6 +3657,10 @@ function RayfieldLibrary:CreateWindow(Settings)
 			end)
 
 			Slider.Main.Interact.InputEnded:Connect(function(Input) 
+				if SliderSettings.State ~= "default" then
+					return
+				end
+
 				if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then 
 					TweenService:Create(Slider.Main.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 0.4}):Play()
 					TweenService:Create(Slider.Main.Progress.UIStroke, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {Transparency = 0.3}):Play()
@@ -3190,6 +3669,10 @@ function RayfieldLibrary:CreateWindow(Settings)
 			end)
 
 			Slider.Main.Interact.MouseButton1Down:Connect(function(X)
+				if SliderSettings.State ~= "default" then
+					return
+				end
+
 				local Current = Slider.Main.Progress.AbsolutePosition.X + Slider.Main.Progress.AbsoluteSize.X
 				local Start = Current
 				local Location = X
@@ -3252,6 +3735,12 @@ function RayfieldLibrary:CreateWindow(Settings)
 			end)
 
 			function SliderSettings:Set(NewVal)
+				if SliderSettings.State ~= "default" then
+					SliderSettings.CurrentValue = NewVal
+					SaveConfiguration()
+					return
+				end
+
 				TweenService:Create(Slider.Main.Progress, TweenInfo.new(0.45, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {Size = UDim2.new(0, Slider.Main.AbsoluteSize.X * ((NewVal + SliderSettings.Range[1]) / (SliderSettings.Range[2] - SliderSettings.Range[1])) > 5 and Slider.Main.AbsoluteSize.X * (NewVal / (SliderSettings.Range[2] - SliderSettings.Range[1])) or 5, 1, 0)}):Play()
 				Slider.Main.Information.Text = tostring(NewVal) .. " " .. (SliderSettings.Suffix or "")
 				local Success, Response = pcall(function()
@@ -3271,6 +3760,10 @@ function RayfieldLibrary:CreateWindow(Settings)
 				SliderSettings.CurrentValue = NewVal
 				SaveConfiguration()
 			end
+
+			function SliderSettings:SetState(NewState)
+				applySliderState(NewState)
+			end
 			
 			if Settings.ConfigurationSaving then
 				if Settings.ConfigurationSaving.Enabled and SliderSettings.Flag then
@@ -3283,10 +3776,7 @@ function RayfieldLibrary:CreateWindow(Settings)
 					Slider.Main.Shadow.Visible = false
 				end
 
-				Slider.Main.BackgroundColor3 = SelectedTheme.SliderBackground
-				Slider.Main.UIStroke.Color = SelectedTheme.SliderStroke
-				Slider.Main.Progress.UIStroke.Color = SelectedTheme.SliderStroke
-				Slider.Main.Progress.BackgroundColor3 = SelectedTheme.SliderProgress
+				applySliderState(SliderSettings.State)
 			end)
 
 			return SliderSettings
